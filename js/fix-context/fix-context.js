@@ -5,15 +5,16 @@ import Degrees from '../es6lib/degrees.js';
 import LengthUnits from '../es6lib/length-units.js';
 import Logger from '../logger/logger.js';
 import ViewError from '../shared/view-error.js';
+import parseDate from './parse-date.js';
 import parseZone from './parse-zone.js';
 
 const lengthUnits = new LengthUnits().use('m');
 const Regex = {
-	height: /^height:\s*/i,
-	index:  /^index:\s*/i,
-	date:   /^date:\s*/i,
-	zone:   /^zone:\s*/i,
-	time:   /^time:\s*/i,
+	heightField: /^height:\s*/i,
+	indexField:  /^index:\s*/i,
+	dateField:   /^date:\s*/i,
+	zoneField:   /^zone:\s*/i,
+	timeField:   /^time:\s*/i,
 };
 
 let degrees = Degrees;
@@ -30,10 +31,10 @@ export default class FixContext {
 		this.circles = [];
 	}
 	computeLine(line) {
-		if (Regex.height.test(line)) return this.computeHeightLine(line);
-		if (Regex.index.test(line)) return this.computeIndexLine(line);
-		if (Regex.date.test(line)) return this.computeDateLine(line);
-		if (Regex.zone.test(line)) return this.computeZoneLine(line);
+		if (Regex.heightField.test(line)) return this.computeHeightLine(line);
+		if (Regex.indexField.test(line)) return this.computeIndexLine(line);
+		if (Regex.dateField.test(line)) return this.computeDateLine(line);
+		if (Regex.zoneField.test(line)) return this.computeZoneLine(line);
 		if (/,.*,/.test(line)) return this.computeReading(line);
 		throw new ViewError(`Unable to compute input line`);
 	}
@@ -45,7 +46,7 @@ export default class FixContext {
 		this.buildCircle();
 	}
 	computeHeightLine(line) {
-		const value = line.replace(Regex.height, '').trim();
+		const value = line.replace(Regex.heightField, '').trim();
 		const height = lengthUnits.parse(value);
 		if (isNaN(height)) {
 			throw new ViewError(`Invalid format for height "${value}"`);
@@ -55,7 +56,7 @@ export default class FixContext {
 		Logger.log(`Dip = ${degrees.stringify(dip)}`);
 	}
 	computeIndexLine(line) {
-		const value = line.replace(Regex.index, '').trim();
+		const value = line.replace(Regex.indexField, '').trim();
 		const parsed = degrees.parse(value);
 		if (isNaN(parsed)) {
 			throw new ViewError(`Invalid format for index error "${value}"`);
@@ -67,11 +68,15 @@ export default class FixContext {
 		Logger.log(`Index error = ${degrees.stringify(parsed, ['+', '-'])}`);
 	}
 	computeDateLine(line) {
-		const value = line.replace(Regex.date, '').trim();
-		this.date = value;
+		const value = line.replace(Regex.dateField, '').trim();
+		const parsed = parseDate(value);
+		if (parsed == null) {
+			throw new ViewError(`Invalid date "${value}"`);
+		}
+		this.date = parsed;
 	}
 	computeZoneLine(zone) {
-		const value = zone.replace(Regex.zone, '').trim();
+		const value = zone.replace(Regex.zoneField, '').trim();
 		const parsed = parseZone(value);
 		if (parsed == null) {
 			throw new ViewError(`Invalid time zone "${value}"`);
@@ -111,7 +116,7 @@ export default class FixContext {
 		const unixTime = this.getUnixTime();
 		const ariesGHA = calcAriesGHA(unixTime);
 		const { name, sha, dec } = this.body;
-		const gha = sha + ariesGHA;
+		const gha = (sha + ariesGHA)%360;
 		const lat = dec;
 		const lon = (360 - gha + 180)%360 - 180;
 		Logger.log('');
@@ -139,7 +144,7 @@ export default class FixContext {
 		let ho = ha;
 		let hoCalc = degrees.stringify(ha);
 		let ref = calcAltRefraction(ha);
-		hoCalc += ' - ' + degrees.stringify(ref) + '(std. ref.)';
+		hoCalc += ' - ' + degrees.stringify(ref) + '(refraction)';
 		ho -= ref;
 		Logger.log('Ho = ' + hoCalc + ' = ' + degrees.stringify(ho));
 		const zenith = 90 - ho;
