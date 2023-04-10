@@ -11,7 +11,7 @@ const parseZone = (zone) => {
 	return str.replace(/^[-+]\s*/, sign)
 		.replace(/\b(\d)\b/g, '0$1')
 		.replace(/\s*:\s*/, '')
-		.replace(/\d+/, digits => digits.padStart(4, '0'));
+		.replace(/\d+/, digits => digits.padEnd(4, '0'));
 };
 
 export default parseZone;
