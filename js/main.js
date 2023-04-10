@@ -31,8 +31,8 @@ const run = () => {
 				console.error(err);
 				return;
 			}
-			Logger.log('\nError: ' + err.message);
-			Logger.log(`Error occurred when computing this line: "${line}"`);
+			Logger.error('\nError: ' + err.message);
+			Logger.error(`At: "${line}"`);
 			return;
 		}
 	}

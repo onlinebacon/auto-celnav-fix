@@ -10,6 +10,13 @@ class LoggerAdapter {
 		this.dom.innerText += text + '\n';
 		return this;
 	}
+	error(text) {
+		const span = document.createElement('span');
+		span.setAttribute('class', 'error');
+		span.innerText = text + '\n';
+		this.dom.appendChild(span);
+		return this;
+	}
 	clear() {
 		this.dom.innerText = '';
 	}
