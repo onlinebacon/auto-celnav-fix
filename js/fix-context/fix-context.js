@@ -1,8 +1,10 @@
 import Almanac from '../es6lib/almanac.js';
 import { calcAltRefraction } from '../es6lib/celnav.js';
 import { calcAriesGHA, calcDip } from '../es6lib/celnav.js';
+import { calcAzm } from '../es6lib/coord.js';
 import Degrees from '../es6lib/degrees.js';
 import LengthUnits from '../es6lib/length-units.js';
+import Trig from '../es6lib/trig.js';
 import Logger from '../logger/logger.js';
 import ViewError from '../shared/view-error.js';
 import parseDate from './parse-date.js';
@@ -15,6 +17,7 @@ const Regex = {
 	dateField:   /^date:\s*/i,
 	zoneField:   /^zone:\s*/i,
 	timeField:   /^time:\s*/i,
+	drField:     /^dr:\s*/i,
 };
 
 let degrees = Degrees;
@@ -35,6 +38,7 @@ export default class FixContext {
 		if (Regex.indexField.test(line)) return this.computeIndexLine(line);
 		if (Regex.dateField.test(line)) return this.computeDateLine(line);
 		if (Regex.zoneField.test(line)) return this.computeZoneLine(line);
+		if (Regex.drField.test(line)) return this.computeDrLine(line);
 		if (/,.*,/.test(line)) return this.computeReading(line);
 		throw new ViewError(`Unable to compute input line`);
 	}
@@ -75,13 +79,22 @@ export default class FixContext {
 		}
 		this.date = parsed;
 	}
-	computeZoneLine(zone) {
-		const value = zone.replace(Regex.zoneField, '').trim();
+	computeZoneLine(line) {
+		const value = line.replace(Regex.zoneField, '').trim();
 		const parsed = parseZone(value);
 		if (parsed == null) {
 			throw new ViewError(`Invalid time zone "${value}"`);
 		}
 		this.zone = parsed;
+	}
+	computeDrLine(line) {
+		const value = line.replace(Regex.drField, '').trim();
+		const dr = value.split(/\s*,\s*/).map(val => Degrees.parse(val));
+		const [ lat, lon ] = dr;
+		if (dr.length !== 2 || isNaN(lat) || isNaN(lon)) {
+			throw new ViewError(`Invalid dead reckoning "${value}"`);
+		}
+		this.dr = dr;
 	}
 	updateTime(time) {
 		if (this.zone === null) {
@@ -119,6 +132,7 @@ export default class FixContext {
 		const gha = (sha + ariesGHA)%360;
 		const lat = dec;
 		const lon = (360 - gha + 180)%360 - 180;
+		const gp = [ lat, lon ];
 		Logger.log('');
 		Logger.log('Body: ' + name);
 		Logger.log('SHA = ' + degrees.stringify(sha));
@@ -149,5 +163,16 @@ export default class FixContext {
 		Logger.log('Ho = ' + hoCalc + ' = ' + degrees.stringify(ho));
 		const zenith = 90 - ho;
 		Logger.log(`Zenith = 90° - ${degrees.stringify(ho)} = ${degrees.stringify(zenith)}`);
+		let compAzm = null;
+		if (this.dr != null) {
+			const trig = new Trig();
+			compAzm = trig.inDeg(trig.fromRad(calcAzm(this.dr, gp)));
+			Logger.log(`Computed azimuth = ${Degrees.stringify(compAzm)}`);
+		}
+		const circle = {
+			center: [ lat, lon ],
+			radius: zenith,
+		};
+		this.circles.push(circle);
 	}
 }
