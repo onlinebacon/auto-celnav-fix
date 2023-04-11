@@ -166,12 +166,16 @@ export default class FixContext {
 		let compAzm = null;
 		if (this.dr != null) {
 			const trig = new Trig();
-			compAzm = trig.inDeg(trig.fromRad(calcAzm(this.dr, gp)));
+			const radDR = this.dr.map(val => val/180*Math.PI);
+			const radGP = gp.map(val => val/180*Math.PI);
+			compAzm = trig.inDeg(trig.fromRad(calcAzm(radDR, radGP)));
 			Logger.log(`Computed azimuth = ${Degrees.stringify(compAzm)}`);
 		}
 		const circle = {
 			center: [ lat, lon ],
 			radius: zenith,
+			compAzm,
+			unixTime,
 		};
 		this.circles.push(circle);
 	}
