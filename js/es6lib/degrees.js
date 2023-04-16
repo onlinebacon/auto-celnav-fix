@@ -61,6 +61,9 @@ class DegreesConverter {
 	stringify(value, prefix = [ '', '-' ]) {
 		return this.stringifyFn(value, prefix);
 	}
+	arcMins() {
+		return new DegreesConverter();
+	}
 }
 
 const Degrees = new DegreesConverter();
