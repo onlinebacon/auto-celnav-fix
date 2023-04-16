@@ -1,10 +1,12 @@
+import Degrees from './es6lib/degrees.js';
 import FixContext from './fix-context/fix-context.js';
 import Logger from './logger/logger.js';
 import PlottingSheet from './plotting-sheet/plotting-sheet.js';
 import ViewError from './shared/view-error.js';
 
 Logger.setDom(document.querySelector('div.logs'));
-const sheet = new PlottingSheet(document.querySelector('canvas'));
+const sheet = new PlottingSheet(document.querySelector('#sheet canvas'));
+const deg = Degrees.arcMins();
 
 const initText = [
 	`date: 2018-11-15`,
@@ -21,10 +23,17 @@ const initText = [
 const inputBox = document.querySelector('textarea');
 inputBox.value = initText;
 
+const stringifyCoord = ([ lat, lon ]) => {
+	lat = deg.stringify(lat, [ 'N ', 'S ' ]);
+	lon = deg.stringify(lon, [ 'E ', 'W ' ]);
+	return lat + ', ' + lon;
+};
+
 const run = () => {
 	Logger.clear();
 	Logger.log('Computing fix...');
 	sheet.clear();
+	sheet.run();
 	const ctx = new FixContext();
 	const lines = inputBox.value.trim().split(/\s*\n\s*/);
 	for (const line of lines) {
@@ -44,7 +53,10 @@ const run = () => {
 	if (ctx.dr) {
 		sheet.dr = ctx.dr;
 		sheet.circles = ctx.circles;
-		sheet.draw();
+		const res = sheet.run();
+		if (res != null) {
+			Logger.log(`\nPlotting sheet result: ${stringifyCoord(res)}`);
+		}
 	}
 };
 

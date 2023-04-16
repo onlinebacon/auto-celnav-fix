@@ -1,13 +1,35 @@
 import { haversine } from '../es6lib/coord.js';
+import Degrees from '../es6lib/degrees.js';
+import Trig from '../es6lib/trig.js';
+import inscribedCircleCenter from './inscribed-circle-center.js';
+import Line from './line.js';
 
 const fixedLinesColor = '#666';
-const userLinesColor = '#5fa';
+const resultLinesColor = '#fff';
 const fixedLinesWidth = 1;
+const interceptExtra = 50;
 const canvasDef = document.createElement('canvas');
 const ctxDef = canvasDef.getContext('2d');
+const lineDef = new Line();
 
+const arcmins = Degrees.arcMins();
+const trig = new Trig().degrees();
 const radToDeg = (val) => val/Math.PI*180;
 const degToRad = (val) => val/180*Math.PI;
+const sightColors = [ '#5fa', '#5af', '#fa5' ];
+const getColor = (i) => sightColors[i] ?? '#aaa';
+
+const fixLatLon = ([ lat, lon ]) => {
+	if (lat > 90) {
+		lat = 180 - lat;
+		lon += 180;
+	} else if (lat < -90) {
+		lat = - 180 - lat;
+		lon += 180;
+	}
+	lon = (lon%360 + 360 + 180)%360 - 180;
+	return [ lat, lon ];
+};
 
 const drawRotatedTextBelow = (ctx = ctxDef, text, angle, x, y) => {
 	ctx.save();
@@ -72,12 +94,11 @@ const calcDist = (a, b) => radToDeg(
 	haversine(a.map(degToRad), b.map(degToRad))
 );
 
-const drawSightLine = (ctx = ctxDef, cx, cy, azm, len) => {
+const drawSightLine = (ctx = ctxDef, cx, cy, dx, dy, len, color) => {
 	ctx.beginPath();
-	const ang = degToRad(azm);
-	const bx = cx + Math.sin(ang)*len;
-	const by = cy - Math.cos(ang)*len;
-	ctx.strokeStyle = userLinesColor;
+	const bx = cx + dx*len;
+	const by = cy + dy*len;
+	ctx.strokeStyle = color;
 	ctx.setLineDash([ 4, 6 ]);
 	ctx.beginPath();
 	ctx.moveTo(cx, cy);
@@ -86,21 +107,45 @@ const drawSightLine = (ctx = ctxDef, cx, cy, azm, len) => {
 	ctx.setLineDash([]);
 };
 
-const drawInterceptLine = (ctx = ctxDef, cx, cy, azm, dist, len) => {
-	const ang1 = degToRad(azm);
-	const dx = Math.sin(ang1);
-	const dy = -Math.cos(ang1);
-	const mx = cx + dx*dist;
-	const my = cy + dy*dist;
-	const ax = mx + len/2*dy;
-	const ay = my - len/2*dx;
-	const bx = mx - len/2*dy;
-	const by = my + len/2*dx;
-	ctx.strokeStyle = userLinesColor;
+const drawArrowTip = (ctx = ctxDef, x, y, dx, dy, offset) => {
+	const len = 7;
+	const [ a, b ] = [
+		(dx + dy)*Math.SQRT1_2*len,
+		(dy - dx)*Math.SQRT1_2*len,
+	];
+	const cx = x + dx*offset;
+	const cy = y + dy*offset;
 	ctx.beginPath();
-	ctx.moveTo(ax, ay);
+	ctx.moveTo(cx - a, cy - b);
+	ctx.lineTo(cx, cy);
+	ctx.lineTo(cx + b, cy - a);
+	ctx.stroke();
+};
+
+const drawInterceptLine = (ctx = ctxDef, line = lineDef, minT, maxT, color) => {
+	ctx.strokeStyle = color;
+	const [ ax, ay ] = line.tVal(minT - interceptExtra);
+	const [ bx, by ] = line.tVal(maxT + interceptExtra);
+	ctx.beginPath();
+	ctx.lineTo(ax, ay);
 	ctx.lineTo(bx, by);
 	ctx.stroke();
+	drawArrowTip(ctx, bx, by, line.dx, line.dy, 0);
+	drawArrowTip(ctx, bx, by, line.dx, line.dy, -5);
+	drawArrowTip(ctx, ax, ay, -line.dx, -line.dy, 0);
+	drawArrowTip(ctx, ax, ay, -line.dx, -line.dy, -5);
+};
+
+const drawFix = (ctx = ctxDef, x, y, coord) => {
+	ctx.fillStyle = resultLinesColor;
+	ctx.beginPath();
+	ctx.arc(x, y, 3, 0, Math.PI*2);
+	ctx.fill();
+	ctx.textBaseline = 'bottom';
+	ctx.textAlign = 'left';
+	const text = coord.map(val => arcmins.stringify(val));
+	ctx.font = '16px monospace';
+	ctx.fillText(text, x + 15, y - 15);
 };
 
 export default class PlottingSheet {
@@ -115,7 +160,7 @@ export default class PlottingSheet {
 		const { width, height } = canvas;
 		this.width = width;
 		this.height = height;
-		this.scale = Math.min(width, height)*0.4;
+		this.scale = Math.min(width, height)*0.49;
 		this.cx = Math.floor(width/2) + 0.5;
 		this.cy = Math.floor(height/2) + 0.5;
 	}
@@ -123,18 +168,67 @@ export default class PlottingSheet {
 		this.dr = true ? null : [ 0, 0 ];
 		this.circles = [];
 	}
-	draw() {
+	run() {
 		this.updateVars();
 		const { ctx, circles } = this;
 		const { width, height, scale, cx, cy } = this;
 		ctx.clearRect(0, 0, width, height);
 		drawProtractor(ctx, cx, cy, scale);
-		for (let circle of circles) {
+		const sightLines = [];
+		for (let i=0; i<circles.length; ++i) {
+			const circle = circles[i];
 			const compRad = calcDist(this.dr, circle.center);
 			const dist = compRad - circle.radius;
 			const azm = circle.compAzm;
-			drawSightLine(ctx, cx, cy, azm, dist >= 0 ? 5*scale : -5*scale);
-			drawInterceptLine(ctx, cx, cy, azm, dist*scale, scale*5);
+			const dx = trig.sin(azm);
+			const dy = - trig.cos(azm);
+			const x = cx + dx*dist*scale;
+			const y = cy + dy*dist*scale;
+			const len = dist >= 0 ? 5*scale : -5*scale;
+			drawSightLine(ctx, cx, cy, dx, dy, len, getColor(i));
+			sightLines.push(new Line(x, y, dx, dy));
 		}
+		const intercepts = sightLines.map(line => line.rotateDir90());
+		for (let i=0; i<intercepts.length; ++i) {
+			const intercept = intercepts[i];
+			let minT = 0, maxT = 0;
+			for (let line of intercepts) {
+				if (line === intercept) {
+					continue;
+				}
+				const { t } = intercept.intersectionWith(line);
+				minT = Math.min(minT, t);
+				maxT = Math.max(maxT, t);
+			}
+			ctx.fillStyle = ctx.strokeStyle;
+			drawInterceptLine(ctx, intercept, minT, maxT, getColor(i));
+		}
+		const points = [];
+		for (let i=1; i<intercepts.length; ++i) {
+			for (let j=0; j<i; ++j) {
+				const { x, y } = intercepts[i].intersectionWith(intercepts[j]);
+				points.push([ x, y ]);
+			}
+		}
+		if (points.length === 1) {
+			const [[ x, y ]] = points;
+			const coord = this.coordAt(x, y);
+			drawFix(ctx, x, y, coord);
+			return coord;
+		}
+		if (points.length === 3) {
+			const [ x, y ] = inscribedCircleCenter(...points);
+			const coord = this.coordAt(x, y);
+			drawFix(ctx, x, y, coord);
+			return coord;
+		}
+		return null;
+	}
+	coordAt(x, y) {
+		const { cx, cy, scale, dr: [ lat, lon ] } = this;
+		const dx = x - cx;
+		const dy = y - cy;
+		const lonScale = Math.cos(degToRad(lat))*scale;
+		return fixLatLon([ lat - dy/scale, lon + dx/lonScale ]);
 	}
 }
