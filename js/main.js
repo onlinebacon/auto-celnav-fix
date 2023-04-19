@@ -7,9 +7,8 @@ import ViewError from './shared/view-error.js';
 Logger.setDom(document.querySelector('div.logs'));
 const sheet = new PlottingSheet(document.querySelector('#sheet canvas'));
 const deg = Degrees.arcMins();
-
 const initText = [
-	`date: 2018-11-15`,
+	`date: Nov 15th, 2018`,
 	`dr: 29°42.2', -37°2.5'`,
 	`zone: UTC`,
 	`index: -0.3'`,
